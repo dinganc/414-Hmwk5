@@ -1,0 +1,119 @@
+---
+title: "Homework 5"
+author: "Justin Zipkin * Derek Chen"
+date: '2018-03-20'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r cars}
+
+teledata <- read.csv("telemarketing.csv", sep = ";")
+str(teledata)
+
+
+
+
+```{r results="hide"}
+#Insert your code for data import and cleaning here
+teledata = read.table("Downloads/telemarketing.csv",sep=';',header=T)
+dia.map = c("no"=0, "yes"=1)
+teledata$y=dia.map[as.character(teledata$y)]
+teledata$duration=NULL
+```
+```{r}
+library(lmtest)
+library(aod)
+LReg=glm(y~age+job+marital+education+default+housing+loan+contact+month+day_of_week+campaign+pdays+previous+poutcome+emp.var.rate+cons.price.idx+cons.conf.idx+euribor3m+nr.employed,data=teledata,family = 'binomial')
+summary(LReg)
+
+```
+```{r results="hide"}
+
+
+teledata$marital=NULL
+teledata$education=NULL
+teledata$housing=NULL
+teledata$loan=NULL
+
+
+for (i in colnames(teledata)){
+  if (i=='y'){next}
+  if (sapply(teledata[i], is.factor)==TRUE){next}
+  {teledata[i]=scale(teledata[i])}
+}
+
+teledata=as.data.frame(model.matrix(~.-1,data=teledata))
+
+na.omit(teledata)
+tele_norm <- as.data.frame(scale(teledata [,-40], center = TRUE, scale = TRUE))
+tele_norm$y = teledata$y
+```
+
+```{r}
+set.seed(1989)
+train_ix=sample(seq_len(nrow(tele_norm)),size=floor(0.75*nrow(tele_norm)))
+train=tele_norm[train_ix, ]
+test=tele_norm[-train_ix, ]
+train2=tele_norm[train_ix,]
+test2=tele_norm[-train_ix,]
+train_labels=teledata[train_ix,40]
+test_labels=teledata[-train_ix,40]
+
+train$jobbluecollar=train$`jobblue-collar`
+train$jobselfemployed=train$`jobself-employed`
+colnames(tele_norm)[3] <- "jobblue_collar"
+colnames(tele_norm)[8] <- "jobself_employed"
+```
+
+
+```{r}
+library(class)
+knn_model <- knn(train = train, test = test,
+                      cl = train_labels, k=30)
+library(gmodels)
+CrossTable(x = test_labels, y = knn_model, 
+           prop.chisq=FALSE)
+
+```
+
+
+```{r}
+library(neuralnet)
+install.packages("Scale")
+#tele_norm <- as.data.frame(scale(teledata, center = TRUE, scale = TRUE))
+#tele_norm <- as.data.frame(lapply(teledata, normalize))
+
+#train$jobbluecollar=train$`jobblue-collar`
+#train$jobselfemployed=train$`jobself-employed`
+
+
+n <- names(train)
+f <- as.formula(paste("y ~", paste(n[!n %in% "y"], collapse = " + ")))
+
+model = neuralnet(formula = f,data=train,hidden=c(5,2),stepmax=1e6, threshold = 0.8,lifesign = "Full")
+#model = neuralnet(formula = f,data=train2,hidden=c(5,2),stepmax=1e6)
+#model = neuralnet(formula = f,data=train,hidden=c(5,2),stepmax=1e6,threshold = 0.1,lifesign = "Full")
+plot(model)
+
+model_results <- compute(model,test[1:39])
+predicted_strength <- model_results$net.result
+summary(predicted_strength)
+View(predicted_strength)
+nnprediction <- ifelse(predicted_strength >= 0.5, 1, 0)
+
+CrossTable(x = test$y, y = nnprediction, 
+           prop.chisq=FALSE)
+```
+```{r, combination}
+
+```
+```
+

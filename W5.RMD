@@ -1,0 +1,117 @@
+---
+title: "TO414 HMWK5"
+author: "Dingan Chen, Justin Zipkin"
+date: "Mar 20, 2018"
+output:
+  html_document:
+    highlight: tango
+    theme: flatly
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##first run a linear model to determine which variables are not important
+```{r results="hide"}
+#Insert your code for data import and cleaning here
+df = read.table('telemarketing.csv',sep=';',header=T)
+dia.map = c("no"=0, "yes"=1)
+df$y=dia.map[as.character(df$y)]
+df$duration=NULL
+```
+```{r}
+library(lmtest)
+library(aod)
+mo=glm(y~age+job+marital+education+default+housing+loan+contact+month+day_of_week+campaign+pdays+previous+poutcome+emp.var.rate+cons.price.idx+cons.conf.idx+euribor3m+nr.employed,data=df,family = 'binomial')
+summary(mo)
+```
+
+##Here the code is encoding categorical variables into dummy variables and normalizing the variables (except for variable y)
+##Also "-" is removed from varibale names because dash might be confused with minus
+```{r results="hide"}
+df$marital=NULL
+df$education=NULL
+df$housing=NULL
+df$loan=NULL
+
+for (i in colnames(df)){
+  if (i=='y'){next}
+  if (sapply(df[i], is.factor)==TRUE){next}
+  {df[i]=scale(df[i])}
+}
+
+df=as.data.frame(model.matrix(~.-1,data=df))
+df$jobbluecollar=df$`jobblue-collar`
+df$jobselfemployed=df$`jobself-employed`
+df$`jobblue-collar`=NULL
+df$`jobself-employed`=NULL
+na.omit(df)
+
+```
+##Randomly seperated 25% as the test and the rest as training, using random seed 2387
+```{r}
+set.seed(2387)
+train_ix=sample(seq_len(nrow(df)),size=floor(0.75*nrow(df)))
+train=df[train_ix,]
+test=df[-train_ix,]
+train_nn=train
+test_nn=test
+train_labels=factor(train[,'y'])
+test_labels=factor(test[,'y'])
+train$y=NULL
+test$y=NULL
+```
+
+##For KNN, K=33 is used
+```{r}
+library(class)
+KNN_predic <- knn(train = train, test = test, cl = train_labels, k=33)
+library(gmodels)
+CrossTable(x = test_labels, y = KNN_predic, 
+           prop.chisq=FALSE)
+```
+##Below is the code for an ANN with two hidden layers of 5 and 2 nodes
+```{r}
+library(neuralnet)
+print(colnames(train_nn))
+
+f <- reformulate(setdiff(colnames(train_nn), "y"), response="y")
+model=neuralnet(f,data=train_nn,hidden=c(5,2),stepmax=1e6,threshold = 0.9,lifesign = 'full')
+plot(model)
+```
+```{r}
+model_results <- compute(model, test_nn[,1:39])
+ANN_predic_RAW <- model_results$net.result
+ANN_predic=ANN_predic_RAW
+ANN_predic[ANN_predic_RAW>=0.5]=1
+ANN_predic[ANN_predic_RAW<0.5]=0
+```
+
+##The code below is "voting" for a combined result. If ANN and KNN gives the same result, then the result from KNN is used
+##If ANN's raw score is less than 0.3, then the result is 0, if the score is more than 0.7, then the result is 1
+##If ANN's raw score is between 0.3 and 0.7, then we use KNN's result because ANN is not very sure of the prediction result
+```{r results="hide"}
+combo=data.frame(ANN_predic_RAW,ANN_predic,KNN_predic,test_labels)
+na.omit(combo)
+combo$combo_res <- rep(NA, nrow(combo))
+for(i in 1:nrow(combo)) 
+  {
+    if(combo[i,2]==combo[i,3]){combo[i,5]=combo[i,2]}
+    if(combo[i,1]<0.3){combo[i,5]=0}
+    else if(combo[i,1]>0.7){combo[i,5]=1}
+    else {combo[i,5]=combo[i,3]}
+}
+```
+```{r}
+ann_accuracy=sum(combo$test_labels==combo$ANN_predic)/nrow(combo)
+knn_accuracy=sum(combo$test_labels==combo$KNN_predic)/nrow(combo)
+combined_accuracy=sum(combo$test_labels==combo$combo_res)/nrow(combo)
+```
+##The ANN method gives an accuracy of 89.1% and KNN with 89.8%. However, the combined method gives a lower accuracy of 85.4%
+
+
+
